@@ -1,0 +1,5 @@
+# Build artifacts
+*.test
+*.out
+# Editor/OS cruft
+.DS_Store
