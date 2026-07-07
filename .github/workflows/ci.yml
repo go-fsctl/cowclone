@@ -28,9 +28,6 @@ jobs:
           - goos: darwin
             arch: arm64
             runner: macos-latest
-          - goos: darwin
-            arch: amd64
-            runner: macos-13
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
@@ -110,23 +107,32 @@ jobs:
             echo "::endgroup::"
           done
 
-  stub:
-    name: stub (${{ matrix.goos }})
+  crossbuild:
+    name: cross-build (${{ matrix.goos }}/${{ matrix.arch }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        goos: [windows, freebsd]
+        include:
+          # darwin/amd64: the APFS clonefile path is run natively on the
+          # arm64 macOS lane above; this cross-build keeps the amd64 darwin
+          # binary green without a (perennially backlogged) Intel-mac runner.
+          - goos: darwin
+            arch: amd64
+          # windows/freebsd: cloneCoW compiles to the plain-copy fallback stub
+          # (clone_other.go); ensure it stays green everywhere it is built.
+          - goos: windows
+            arch: amd64
+          - goos: freebsd
+            arch: amd64
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version: stable
-      - name: Build + vet the non-linux/non-darwin fallback stub
+      - name: Build + vet + test-compile (${{ matrix.goos }}/${{ matrix.arch }})
         run: |
           set -euo pipefail
-          # cloneCoW on ${{ matrix.goos }} compiles to the plain-copy fallback
-          # stub (clone_other.go); ensure it stays green everywhere it is built.
-          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=amd64 go build ./...
-          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=amd64 go vet ./...
-          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=amd64 go test -c -o /dev/null ./...
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.arch }} go build ./...
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.arch }} go vet ./...
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.arch }} go test -c -o /dev/null ./...
