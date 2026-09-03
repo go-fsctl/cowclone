@@ -47,6 +47,44 @@ jobs:
           awk -v c="$total" -v m="$COVERAGE_FLOOR" 'BEGIN { exit (c+0 >= m+0) ? 0 : 1 }' \
             || { echo "Coverage ${total}% below floor ${COVERAGE_FLOOR}%"; exit 1; }
 
+  # Windows runs the FALLBACK, and nothing else does.
+  #
+  # clone_other.go is the `!darwin && !linux` implementation: it reports the
+  # clone unsupported so Clone degrades to a byte copy. Until now the only
+  # windows lane was `crossbuild`, which compiles that file and never runs it,
+  # so the degraded path this library promises "everywhere else" was executed
+  # on no platform that actually takes it.
+  #
+  # Its own job rather than another entry in `native`, because that matrix's
+  # steps use POSIX prefixes (`CGO_ENABLED=0 go build`) and `set -euo
+  # pipefail`, and the Windows runner is PowerShell, which reads the prefix as
+  # a command it cannot find. CGO_ENABLED moves to env and the gate step asks
+  # for bash by name.
+  windows:
+    name: windows (amd64, byte-copy fallback)
+    runs-on: windows-latest
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: Build
+        run: go build ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Test (with coverage gate)
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test -count=1 -covermode=atomic -coverprofile=cover.out ./...
+          total=$(go tool cover -func=cover.out | awk '/^total:/ {sub(/%/,"",$3); print $3}')
+          echo "Total coverage: ${total}% (floor ${COVERAGE_FLOOR}%)"
+          awk -v c="$total" -v m="$COVERAGE_FLOOR" 'BEGIN { exit (c+0 >= m+0) ? 0 : 1 }' \
+            || { echo "Coverage ${total}% below floor ${COVERAGE_FLOOR}%"; exit 1; }
+
+
   emulated:
     name: emulated (${{ matrix.arch }})
     runs-on: ubuntu-latest
